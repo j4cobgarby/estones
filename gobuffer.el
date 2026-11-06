@@ -22,10 +22,49 @@
   (or ego--game (user-error "No active Go game")))
 
 (defface ego-board-face
-  '((t :background "#e2b451" :foreground "#4f3c12"))
+  '((t :background "#e2b451" :foreground "#b78e37" :height 150))
   "Face for Go board background and lines.")
 
-;; Rendering Logic
+(defface ego-black-stone-face
+  '((t :inherit ego-board-face :foreground "black"))
+  "Face for black stones")
+
+(defface ego-white-stone-face
+  '((t :inherit ego-board-face :foreground "white"))
+  "Face for white stones")
+
+;;;; Rendering Logic
+
+(defun ego-board-char (board x y)
+  "Return the correct board markings for a given X Y position on BOARD"
+  (let* ((size (ego-board-size board))
+         (top (= y 0)) (bottom (= (1+ y) size))
+         (left (= x 0)) (right (= (1+ x) size)))
+    (propertize (cond ((and top left) "┌─")
+          ((and top right) "┐ ")
+          ((and bottom left) "└─")
+          ((and bottom right) "┘ ")
+          (top "┬─")
+          (bottom "┴─")
+          (left "├─")
+          (right "┤ ")
+          ("┼─"))
+                'face 'ego-board-face
+                'grid-idx (ego-idx board x y))))
+
+(defun ego-stone-char (board x y)
+    (let* ((size (ego-board-size board))
+         (top (= y 0)) (bottom (= (1+ y) size))
+         (left (= x 0)) (right (= (1+ x) size))
+         (colour (ego-stone-at board x y)))
+      (concat (propertize "●"
+                          'face (if (eq colour 'black)
+                                             'ego-black-stone-face
+                                      'ego-white-stone-face)
+                          'grid-idx (ego-idx board x y))
+              (propertize (if right " " "─")
+                          'face 'ego-board-face
+                          'grid-idx (ego-idx board x y)))))
 
 (defun ego-render ()
   "Draw the current Go game into the buffer, at the state of the active node."
@@ -38,10 +77,9 @@
     (erase-buffer)
     (dotimes (y size)
       (dotimes (x size)
-        (pcase (ego-stone-at board x y)
-          ('black (insert " B"))
-          ('white (insert " w"))
-          (_ (insert " ."))))
+        (insert (if (ego-stone-at board x y)
+                    (ego-stone-char board x y)
+                  (ego-board-char board x y))))
       (insert "\n"))
     (insert (format "To play: %s\n" (if last-move
                                         (ego-other-colour (ego-move-colour last-move))
@@ -49,6 +87,8 @@
     (let ((prisoners (ego-board-prisoners board)))
       (insert (format "Prisoners: (black) %d, (white) %d\n"
                     (car prisoners) (cdr prisoners))))))
+
+;;;; Mode stuff
 
 (define-derived-mode go-mode special-mode "Go"
   "Major mode for playing Go."
