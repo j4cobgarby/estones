@@ -41,6 +41,15 @@ as well as the MOVE that led to it."
   children                              ; all continuations
   main-move)                            ; the mainline continuation
 
+(cl-defstruct (estones-game (:constructor estones-game--make))
+  "A container for a whole game (an `estones-node') + metadata."
+  root                                  ; Root `estones-node'
+  main-leaf                             ; Current frontier of mainline game
+  black-name                            ; Black player's name
+  white-name                            ; White player's name
+  black-is-local                        ; t if I can make moves for black
+  white-is-local)                       ; t if I can make moves for white
+
 (defun estones-setup-board (board size)
   "Initialises a board by setting its SIZE. Its grid is set to a blank grid of the correct size."
   (unless (and (integerp size) (<= 2 size (length estones-columns)))

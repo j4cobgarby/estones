@@ -15,6 +15,11 @@
 (defvar ogs-ping-timer nil
   "Timer to regularly ping OGS.")
 
+;;; Global vars
+
+(defvar ogs-games (make-hash-table)
+  "A map from OGS game ids to `estones-game' games.")
+
 ;;; Websocket helpers
 
 (defun ogs-send-obj (obj)

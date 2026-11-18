@@ -1,3 +1,35 @@
+* Overall Design
+** estones
+Lisp library responsible for:
+- Representing go board states and game trees
+- Making moves in said games
+  - And understanding which moves are valid
+  - (but not scoring)
+- UI interaction with gobuffer.el:
+  - estones-mode
+  - Render board and game info to buffer
+  - Click to make moves
+** estones-ogs
+This is more or less part of the same package, but /uses/ estones to play games on OGS (online-go.com).
+- Connecting to and logging in to OGS servers
+- Managing the state of an estones game via OGS (both ways)
+  - Updating when moves are made from remote
+  - Sending (and verifying) local moves before they get displayed
+** Mechanisms
+*** Connecting
+OGS uses websockets for basically everything. We can set up callbacks after connecting.
+*** Logging in
+Authenticating just consists of sending a ["authenticate", {"jwt": ...}] message. The jwt value is like an auth token, which right now the easiest way to get seems to be from a signed-in browser at [[https://online-go.com/api/v1/ui/config]].
+Right after connecting, OGS sends a bunch of messages. The main interesting one is "active_game", of which it will send one for every currently active game of the logged in account. It's from this that we get the game IDs, which are just numbers.
+*** Playing a game
+To play in an already active game, we have to send a "game/connect" (see ogs-game-connect). This will send a few message types:
+
+"game/{id}/gamedata" is the most interesting, and gives us a snapshot of the entire game state, in the [[https://docs.online-go.com/goban/interfaces/GobanEngineConfig.html][GobanEngineConfig]] format. This contains a list of all moves in the game, which we can use to construct the game tree.
+  
+So, we need to keep a list of all active games that the user is interested in, and then forward that message to the correct one to update our view of it. We only have one global connection to OGS. One active game is represented in lisp as an `estones-game`.
+
+Every estones buffer (a buffer in estones-mode) has an active game, which is the one it displays. Any game that is an OGS game gets
+  
 * Mockups for how OGS interface can look
 
 ** When not logged in:
