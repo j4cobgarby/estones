@@ -39,7 +39,8 @@ as well as the MOVE that led to it."
   board-snapshot                        ; a copy of an estones-board
   parent                                ; a reference to the previous estones-node in the tree
   children                              ; all continuations
-  main-move)                            ; the mainline continuation
+  main-move
+  move-number)
 
 (cl-defstruct (estones-game (:constructor estones-game--make))
   "A container for a whole game (an `estones-node') + metadata."
@@ -48,7 +49,15 @@ as well as the MOVE that led to it."
   black-name                            ; Black player's name
   white-name                            ; White player's name
   black-is-local                        ; t if I can make moves for black
-  white-is-local)                       ; t if I can make moves for white
+  white-is-local                        ; t if I can make moves for white
+  (has-ended nil)                       ; t if game has ended
+  title)                                ; Name of the game
+
+(defun estones-local-to-playp (game)
+  "Is it currently a local player's turn in GAME, following the mainline leaf node?"
+  (if (eql 'black (estones-next-move-colour (estones-node-move (estones-game-main-leaf game))))
+      (estones-game-black-is-local game)
+    (estones-game-white-is-local game)))
 
 (defun estones-setup-board (board size)
   "Initialises a board by setting its SIZE. Its grid is set to a blank grid of the correct size."
@@ -69,6 +78,13 @@ as well as the MOVE that led to it."
   "Convert vector index to x-y coords"
   (let ((size (estones-board-size board)))
     (cons (% idx size) (/ idx size))))
+
+(defun estones-coords (board idx)
+  (pcase-let* ((`(,x . ,y) (estones-xy board idx))
+               (column (aref estones-columns x))
+               (row (number-to-string
+                     (- (estones-board-size board) y))))
+    (format "%c%s" column row)))
 
 (defun estones-stone-at (board x y)
   "Return stone at coords X, Y"
@@ -166,21 +182,40 @@ Returns the new move, and also modifies the BOARD's history mainline."
 (defun estones-new-gametree (size komi)
   "Creates a brand new game with given board SIZE and KOMI, returning the root node."
   (estones-node--make :board-snapshot (let ((board (estones-board--make :komi komi)))
-                                    (estones-setup-board board size))))
+                                    (estones-setup-board board size))
+                      :move-number 0))
+
+(defun estones-new-local-game (size komi &optional black-name white-name title)
+  "Creates a new game with given board SIZE and KOMI."
+  (estones-game--make
+   :root (estones-new-gametree size komi)
+   :black-name (or black-name "Black")
+   :white-name (or white-name "White")
+   :title (or title "Unnamed Local Game")
+   :black-is-local t
+   :white-is-local t))
 
 (defun estones-play-after-node (node colour idx)
   "Play a new move in a game tree after a given NODE, also setting it as the main continuation.
-If COLOUR is nil, play stones taking in turns between colours."
-  (unless colour
-    (setq colour (estones-next-move-colour (estones-node-move node))))
-  (let* ((board-cpy (estones-board-deep-copy (estones-node-board-snapshot node)))
-         (new-move (estones-play board-cpy colour idx))
-         (new-node (estones-node--make :move new-move
-                                   :board-snapshot board-cpy
-                                   :parent node
-                                   :children nil
-                                   :main-move nil)))
-    (push new-node (estones-node-children node))
-    (setf (estones-node-main-move node) new-node)))
+If COLOUR is nil, play stones taking in turns between colours.
+If a move at IDX already has been played after NODE, it's not added again, and the exist continuation is returned.
+Otherwise, the new node is returned."
+  
+  (let ((existing (any (lambda (move)
+                         (= (estones-move-idx move) idx)) (estones-node-children node))))
+    (if existing
+        (car existing)
+      (unless colour
+        (setq colour (estones-next-move-colour (estones-node-move node))))
+      (let* ((board-cpy (estones-board-deep-copy (estones-node-board-snapshot node)))
+             (new-move (estones-play board-cpy colour idx))
+             (new-node (estones-node--make :move new-move
+                                           :board-snapshot board-cpy
+                                           :parent node
+                                           :children nil
+                                           :main-move nil
+                                           :move-number (1+ (estones-node-move-number node)))))
+        (push new-node (estones-node-children node))
+        (setf (estones-node-main-move node) new-node)))))
 
 (provide 'estones-functionality)

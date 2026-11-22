@@ -28,7 +28,7 @@ To play in an already active game, we have to send a "game/connect" (see ogs-gam
   
 So, we need to keep a list of all active games that the user is interested in, and then forward that message to the correct one to update our view of it. We only have one global connection to OGS. One active game is represented in lisp as an `estones-game`.
 
-Every estones buffer (a buffer in estones-mode) has an active game, which is the one it displays. Any game that is an OGS game gets
+Every estones buffer (a buffer in estones-mode) has an active game, which is the one it displays. Any game that is an OGS game has an entry in ~ogs-games~.
   
 * Mockups for how OGS interface can look
 

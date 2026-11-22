@@ -8,10 +8,10 @@
   :prefix "estones-")
 
 (defvar-local estones--game nil
-  "The `estones-node' game tree root node that this buffer acts on")
+  "The `estones-game' that this buffer represents")
 
 (defvar-local estones--active-node nil
-  "The currently active `estones-node' (within `estones--game')")
+  "The currently active `estones-node' (within `estones--game's tree.)")
 
 (defun estones--require-active-node ()
   "Either return current buffer's active node, or error"
@@ -22,7 +22,7 @@
   (or estones--game (user-error "No active Go game")))
 
 (defface estones-board-face
-  '((t :background "#e2b451" :foreground "#b78e37" :height 150))
+  '((t :background "#e2b451" :foreground "#b78e37"))
   "Face for Go board background and lines.")
 
 (defface estones-black-stone-face
@@ -87,30 +87,60 @@
                           'grid-idx (estones-idx board x y))
               (propertize (if right " " "─")
                           'face 'estones-board-face))))
-
-(defun estones-render ()
-  "Draw the current Go game into the buffer, at the state of the active node."
-  (let* ((game (estones--require-game))
-         (active-node (estones--require-active-node))
-         (board (estones-node-board-snapshot active-node))
+(defun estones-render (game active-node)
+  "Mainly called by `estones-render-current' to draw a Go board state."
+  (let* ((board (estones-node-board-snapshot active-node))
          (last-move (estones-node-move active-node))
          (size (estones-board-size board))
          (inhibit-read-only t)
          (save-point (point)))
     (erase-buffer)
+    (insert (format "'%s'\n------\n" (estones-game-title game)))
+    (insert (format "%s (black) VS %s (white)\n"
+                    (estones-game-black-name game)
+                    (estones-game-white-name game)))
     (dotimes (y size)
       (dotimes (x size)
         (insert (if (estones-stone-at board x y)
                     (estones-stone-char board x y)
                   (estones-board-char board x y))))
       (insert "\n"))
-    (insert (format "To play: %s\n" (if last-move
+    (insert (format "Move %d -- "
+                    (estones-node-move-number active-node)))
+    (insert (format "%s to play \n" (if last-move
                                         (estones-other-colour (estones-move-colour last-move))
                                       'black)))
     (let ((prisoners (estones-board-prisoners board)))
-      (insert (format "Prisoners: (black) %d, (white) %d\n"
-                    (car prisoners) (cdr prisoners))))
+      (insert (format "Prisoner points: (black) %d | (white) %d\n"
+                      (car prisoners) (cdr prisoners))))
     (goto-char save-point)))
+
+(defun estones-render-current ()
+  (estones-render (estones--require-game) (estones--require-active-node)))
+
+;; (defun estones-render-current ()
+;;   "Draw the current Go game into the buffer, at the state of the active node."
+;;   (let* ((game (estones--require-game))
+;;          (active-node (estones--require-active-node))
+;;          (board (estones-node-board-snapshot active-node))
+;;          (last-move (estones-node-move active-node))
+;;          (size (estones-board-size board))
+;;          (inhibit-read-only t)
+;;          (save-point (point)))
+;;     (erase-buffer)
+;;     (dotimes (y size)
+;;       (dotimes (x size)
+;;         (insert (if (estones-stone-at board x y)
+;;                     (estones-stone-char board x y)
+;;                   (estones-board-char board x y))))
+;;       (insert "\n"))
+;;     (insert (format "To play: %s\n" (if last-move
+;;                                         (estones-other-colour (estones-move-colour last-move))
+;;                                       'black)))
+;;     (let ((prisoners (estones-board-prisoners board)))
+;;       (insert (format "Prisoners: (black) %d, (white) %d\n"
+;;                       (car prisoners) (cdr prisoners))))
+;;     (goto-char save-point)))
 
 ;;;; Mode stuff
 
@@ -118,6 +148,8 @@
   :parent special-mode-map
   "RET" #'estones-make-move-at-point
   "SPC" #'estones-make-move-at-point
+  "C-n" #'estones-seek-forward
+  "C-p" #'estones-seek-back
   "<mouse-1>" #'estones-make-move-at-mouse)
 
 (define-derived-mode estones-mode special-mode "Estones"
@@ -126,32 +158,66 @@
 \\{estones-mode-map}"
   (setq-local cursor-type 'box))
 
-(defun estones-new-game (size)
-  (interactive (list (read-number "Board size: " 19)))
-  (let ((buf (generate-new-buffer (format "*go size=%d*" size))))
+(defun estones-game-buffer (game &optional jump-to-end)
+  
+  (let ((buf (generate-new-buffer (format "*Go '%s'*" (estones-game-title game)))))
     (with-current-buffer buf
       (estones-mode)
-      (setq estones--game (estones-new-gametree size 6.5))
-      (setq estones--active-node estones--game)
-      (estones-render))
+      (setq estones--game game)
+      (setq estones--active-node (if jump-to-end
+                                     (estones-game-main-leaf estones--game)
+                                   (estones-game-root estones--game)))
+      (estones-render-current))
     (pop-to-buffer-same-window buf)
     buf))
 
-(defun estones-make-move (idx &optional colour)
+(defvar-local estones-make-move-lambda
+  (lambda (idx) (estones-make-move-directly idx))
+  "This is called when a user interactively tries to play a move in an estones buffer. The purpose is so that external Go game interfaces (like OGS) can be implemented.
+It should be a function which takes one argument: the index to play a stone at.
+It should then do something which amounts to playing that move after `estones--active-node' and updating `estones--game' (and probably `estones--active-node'.")
+
+(defun estones-make-move-directly (idx &optional colour)
+  "Directly make a move from the currently active node."
   (interactive (list (read-number "Index: ")))
   (let ((node (estones--require-active-node)))
     (setq estones--active-node (estones-play-after-node node colour idx))
-    (estones-render)))
+    (estones-render-current)))
 
 (defun estones-make-move-at-point ()
   (interactive)
   (let ((idx (get-text-property (point) 'grid-idx)))
     (unless idx (user-error "Point must be over an intersection on the board"))
-    (estones-make-move idx)))
+    (funcall estones-make-move-lambda idx)))
 
 (defun estones-make-move-at-mouse (event)
   (interactive "e")
   (let* ((pos (posn-point (event-start event)))
          (stone-idx (get-text-property pos 'grid-idx)))
     (unless stone-idx (user-error "Cannot play a stone here; not on board."))
-    (estones-make-move stone-idx)))
+    (funcall estones-make-move-lambda stone-idx)))
+
+(defmacro estones-for-each-buffer (body)
+  "Do BODY with each buffer that's in `estones-mode'."
+  `(dolist (buf (buffer-list))
+     (with-current-buffer buf
+       (when (eq major-mode 'estones-mode)
+         ,body))))
+
+;;; Navigating through game
+
+(defun estones-seek-to (node)
+  (setq estones--active-node node)
+  (estones-render-current))
+
+(defun estones-seek-back ()
+  (interactive)
+  (estones-seek-to
+   (or (estones-node-parent estones--active-node)
+       estones--active-node)))
+
+(defun estones-seek-forward ()
+  (interactive)
+  (estones-seek-to
+   (or (estones-node-main-move estones--active-node)
+       estones--active-node)))
