@@ -95,16 +95,33 @@
          (inhibit-read-only t)
          (save-point (point)))
     (erase-buffer)
+    ;; Game description
     (insert (format "'%s'\n------\n" (estones-game-title game)))
     (insert (format "%s (black) VS %s (white)\n"
                     (estones-game-black-name game)
                     (estones-game-white-name game)))
     (dotimes (y size)
+      ;; Row labels
+      (insert (propertize
+               (format "%2d " (- (estones-board-size board) y))
+               'face 'estones-board-face))
+      ;; Board
       (dotimes (x size)
         (insert (if (estones-stone-at board x y)
                     (estones-stone-char board x y)
                   (estones-board-char board x y))))
       (insert "\n"))
+    ;; Column labels
+    (insert (propertize "   " 'face 'estones-board-face))
+    (dotimes (x size)
+      (insert (propertize
+               (format "%c " (aref estones-columns x))
+               'face 'estones-board-face)))
+    (insert "\n")
+    ;; Game status
+    (when last-move
+      (insert (format "Last move was at %s\n"
+                      (estones-coords board (estones-move-idx last-move)))))
     (insert (format "Move %d -- "
                     (estones-node-move-number active-node)))
     (insert (format "%s to play \n" (if last-move
@@ -117,30 +134,6 @@
 
 (defun estones-render-current ()
   (estones-render (estones--require-game) (estones--require-active-node)))
-
-;; (defun estones-render-current ()
-;;   "Draw the current Go game into the buffer, at the state of the active node."
-;;   (let* ((game (estones--require-game))
-;;          (active-node (estones--require-active-node))
-;;          (board (estones-node-board-snapshot active-node))
-;;          (last-move (estones-node-move active-node))
-;;          (size (estones-board-size board))
-;;          (inhibit-read-only t)
-;;          (save-point (point)))
-;;     (erase-buffer)
-;;     (dotimes (y size)
-;;       (dotimes (x size)
-;;         (insert (if (estones-stone-at board x y)
-;;                     (estones-stone-char board x y)
-;;                   (estones-board-char board x y))))
-;;       (insert "\n"))
-;;     (insert (format "To play: %s\n" (if last-move
-;;                                         (estones-other-colour (estones-move-colour last-move))
-;;                                       'black)))
-;;     (let ((prisoners (estones-board-prisoners board)))
-;;       (insert (format "Prisoners: (black) %d, (white) %d\n"
-;;                       (car prisoners) (cdr prisoners))))
-;;     (goto-char save-point)))
 
 ;;;; Mode stuff
 
@@ -156,8 +149,7 @@
   "Major mode for playing Go.
 
 \\{estones-mode-map}"
-  (setq-local cursor-type 'box))
-
+  (setq-local cursor-type 'hollow))
 (defun estones-game-buffer (game &optional jump-to-end)
   
   (let ((buf (generate-new-buffer (format "*Go '%s'*" (estones-game-title game)))))

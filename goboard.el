@@ -145,8 +145,9 @@ Returns the new move, and also modifies the BOARD's history mainline."
          (opp (estones-other-colour colour))
          (captured-stones nil)
          (new-ko nil))
-    (when idx                           ; Playing a stone (otherwise pass)
-      ;; Initial checks to see if the stone can be legal
+    (when idx
+      ;; If idx was nil, we don't get here and just pass.
+      ;; Initial checks to see if the stone can be legal:
       (when (or (< idx 0) (>= idx (length grid)))
         (user-error "Index out of bounds: %s" idx))
       (when (aref grid idx)
@@ -154,7 +155,7 @@ Returns the new move, and also modifies the BOARD's history mainline."
       (when (eql idx prev-ko)
         (user-error "Illegal move: %s recaptures ko point" idx))
       (aset grid idx colour)
-      ;; Check if the new stone captures any neighbouring groups
+      ;; Check if the new stone captures any neighbouring groups:
       (dolist (neighb (estones-board-neighbours board idx))
         (when (eql (aref grid neighb) opp)
           (let ((group (estones-group board neighb nil nil)))
@@ -163,11 +164,11 @@ Returns the new move, and also modifies the BOARD's history mainline."
                 (aset grid taken nil)
                 (push taken captured-stones))))))
       (let ((group (estones-group board idx nil nil)))
-        ;; Check if new stone is suicicide
+        ;; Check if new stone is suicicide:
         (unless (cdr group)
           (aset grid idx nil)
           (user-error "Illegal move: %s is suicide!" idx))
-        ;; Check for new ko (if the new stone is on its own, capturing another, and has
+        ;; Check for new ko: (if the new stone is on its own, capturing another, and has
         ;; now only one liberty)
         (when (and (= (length captured-stones) 1)
                    (= (length (car group)) 1)
