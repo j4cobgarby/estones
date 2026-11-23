@@ -26,6 +26,9 @@
 (defvar ogs-last-moves (make-hash-table)
   "A map from OGS game ids to `estones-node's; the last played moves in those games.")
 
+(defvar ogs-active-games (make-hash-table)
+  "Info about all games the logged in user is in. Not just the ones that are connected to right now. Each key is an ID which maps to a list of (title, black, white, move-num).")
+
 ;;; Websocket helpers
 
 (defun ogs-send-obj (obj)
@@ -59,12 +62,8 @@ Once connected, we receive game updates."
         (pcase event-name
           (1337 (setq ogs-login-id (gethash "id" data))))
       (pcase (split-string event-name "/")
-        ('("active_game") (princ (format "Active game %s, on move %s: '%s'\n"
-                                         (gethash "id" data)
-                                         (gethash "move_number" data)
-                                         (gethash "name" data))))
+        ('("active_game") (ogs-handle-active-game data))
         (`("game" ,id "gamedata")
-         (princ (format "Received gamedata for game %s\n" id))
          (ogs-handle-gamedata (string-to-number id) data))
         (`("game" ,id "move")
          (ogs-handle-move (string-to-number id) data))
@@ -105,6 +104,10 @@ Once connected, we receive game updates."
      (when (eq (estones--require-game) game)
        (setq estones--active-node new-active-node)
        (estones-render-current)))))
+
+(defun ogs-handle-active-game (data)
+  (puthash (gethash "id" data) data
+           ogs-active-games))
 
 (defun ogs-handle-move (game-id data)
   "Handle DATA received by a game/GAME-ID/move message from the server. Handling this just requires appending the move to the correct game tree."
@@ -163,11 +166,25 @@ Receiving such a message implies that this is an active game. DATA, which is exp
                         (gethash "white_player_id" data))
    :has-ended (equal "ended" (gethash "phase" data))))
 
+(defun ogs-game-from-active-game (id data)
+  (let ((new-game (estones-game--make
+          :root (estones-new-gametree (gethash "width" data)
+                                      (or (gethash "komi" data) 6.5))
+          :black-name (gethash "username" (gethash "black" data))
+          :white-name (gethash "username" (gethash "white" data))
+          :title (gethash "name" data)
+          :black-is-local (eql ogs-login-id (gethash "id" (gethash "black" data)))
+          :white-is-local (eql ogs-login-id (gethash "id" (gethash "white" data)))
+          :has-ended (equal "ended" (gethash "phase" data)))))
+    (puthash id new-game ogs-games)
+    (ogs-game-connect id)
+    new-game))
+
 (defun ogs-make-move (idx game-id)
   (let* ((game (gethash game-id ogs-games))
-        (node (estones-game-main-leaf game))
-        (board (estones-node-board-snapshot node))
-        (coords (estones-coords board idx)))
+         (node (estones-game-main-leaf game))
+         (board (estones-node-board-snapshot node))
+         (coords (estones-coords board idx)))
     (unless (estones-local-to-playp game)
       (user-error "It's not your turn"))
     (princ (format "Playing a move in game %d at %s\n" game-id coords))
@@ -175,10 +192,19 @@ Receiving such a message implies that this is an active game. DATA, which is exp
 
 ;;; Buffer/mode related stuff
 
+
+
 (defun ogs-game-buffer (id &optional jump-to-end)
-  (with-current-buffer (estones-game-buffer (or (gethash id ogs-games)
-                                                (user-error (format "No such game: %s\n" id)))
-                                            jump-to-end)
-    (setq ogs-buffer-game-id id)
-    (setq estones-make-move-lambda (lambda (idx)
-                                     (ogs-make-move idx id)))))
+  "This function opens a buffer in which an OGS game can be played. ID is the OGS id of the game, and if JUMP-TO-END, then the buffer view starts at the end of the game."
+  ;; If the game is already in `ogs-games', its state is already loaded, and an estones game buffer can directly be made.
+  ;; Otherwise, the game may be in `ogs-active-games' if it's a game that the user is a player in. In such a case, we can for now at least create an empty game with the correct metadata (such as board size), and send a `game/connect' to OGS to populate the game with the real moves.
+  ;; Otherwise, it may be a real OGS game which the user is not actually in. That's still fine to join as a spectator. In this case, though, we don't yet have any metadata about it, so the best we can do is make a properly blank game, and guess the board size as 19x19.
+  (let* ((connected-game (gethash id ogs-games))
+         (active-game-info (gethash id ogs-active-games))
+         (game (or connected-game
+                   (ogs-game-from-active-game id active-game-info)
+                   (user-error "Cannot spectate non-active games for now..."))))
+    (with-current-buffer (estones-game-buffer game jump-to-end)
+      (setq ogs-buffer-game-id id)
+      (setq estones-make-move-lambda (lambda (idx)
+                                       (ogs-make-move idx id))))))
