@@ -80,6 +80,7 @@ Once connected, we receive game updates."
   (princ (format "Websocket error from cbk %s: %s\n" which err)))
 
 (defun ogs-connect (jwt)
+  (interactive "sJWT string: ")
   (when (websocket-openp ogs-ws) (user-error "Already connected to OGS."))
   (setq ogs-ws (websocket-open ogs-ws-url
                                :on-open 'ogs-on-open
@@ -94,7 +95,9 @@ Once connected, we receive game updates."
 
 (defun ogs-close-connection ()
   (cancel-timer ogs-ping-timer)
-  (websocket-close ogs-ws))
+  (websocket-close ogs-ws)
+  (setq ogs-active-games (make-hash-table)
+        ogs-games (make-hash-table)))
 
 ;;; OGS Games, Moves and Boards
 
@@ -192,8 +195,6 @@ Receiving such a message implies that this is an active game. DATA, which is exp
 
 ;;; Buffer/mode related stuff
 
-
-
 (defun ogs-game-buffer (id &optional jump-to-end)
   "This function opens a buffer in which an OGS game can be played. ID is the OGS id of the game, and if JUMP-TO-END, then the buffer view starts at the end of the game."
   ;; If the game is already in `ogs-games', its state is already loaded, and an estones game buffer can directly be made.
@@ -208,3 +209,24 @@ Receiving such a message implies that this is an active game. DATA, which is exp
       (setq ogs-buffer-game-id id)
       (setq estones-make-move-lambda (lambda (idx)
                                        (ogs-make-move idx id))))))
+
+(defun estones-lobby--ogs-links ()
+  (if (websocket-openp ogs-ws)
+      (progn
+        (estones-lobby--list-link "(Log out)"
+                                  (lambda () (ogs-close-connection)))
+        (estones-lobby--list-link "Auto-matchmaking"
+                                  (lambda () (princ "Not implemented")))
+        (dolist (game-id (hash-table-keys ogs-active-games))
+          (let* ((game-list-info (gethash game-id ogs-active-games))
+                 (game-state (gethash game-id ogs-games)))
+            (estones-lobby--list-link (gethash "name" game-list-info)
+                                      (lambda () (ogs-game-buffer game-id t))
+                                      (format "move %d\t%s VS %s"
+                                              (gethash "move_number" game-list-info)
+                                              (gethash "username" (gethash "black" game-list-info))
+                                              (gethash "username" (gethash "white" game-list-info)))))))
+    (estones-lobby--list-link "Log in"
+                              (lambda () (call-interactively #'ogs-connect)))))
+(push (cons "OGS Games" #'estones-lobby--ogs-links)
+      estones-lobby-functions)

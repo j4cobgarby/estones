@@ -150,6 +150,7 @@
 
 \\{estones-mode-map}"
   (setq-local cursor-type 'hollow))
+
 (defun estones-game-buffer (game &optional jump-to-end)
   
   (let ((buf (generate-new-buffer (format "*Go '%s'*" (estones-game-title game)))))
@@ -213,3 +214,53 @@ It should then do something which amounts to playing that move after `estones--a
   (estones-seek-to
    (or (estones-node-main-move estones--active-node)
        estones--active-node)))
+
+;;; Lobby/Entering games
+
+(define-derived-mode estones-lobby-mode special-mode "Estones Lobby"
+  "Mode for entering games of go.")
+
+(define-key estones-lobby-mode-map "g" #'estones-lobby)
+
+(defun estones-lobby--list-link (lbl fn &optional description)
+  (insert " > ")
+  (insert-text-button lbl
+                      'action (lambda (_btn) (funcall fn))
+                      'follow-link t)
+  (insert "\n")
+  (when description
+    (insert (concat "    - " description "\n"))))
+
+(defun estones-lobby--sep ()
+  (insert "  ------\n"))
+
+(defun estones-lobby--local-links ()
+  (estones-lobby--list-link "New local game"
+                            (lambda () (call-interactively #'estones-new-local-game)))
+  (estones-lobby--list-link "Load SGF file"
+                            (lambda () (message "Not implemented"))))
+
+(defvar estones-lobby-functions
+  (list (cons "Local Games" #'estones-lobby--local-links))
+  "List of (label . function), defining each section in the Estones lobby. The function should print out some links to start/join whatever games (with `estones-lobby--list-link'")
+
+(defun estones-lobby ()
+  "Show the Estones lobby."
+  (interactive)
+  (let ((buf (get-buffer-create "*Estones*")))
+    (with-current-buffer buf
+      (estones-lobby-mode)
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert "╔═╗┌─┐┌┬┐┌─┐┌┐┌┌─┐┌─┐
+║╣ └─┐ │ │ ││││├┤ └─┐
+╚═╝└─┘ ┴ └─┘┘└┘└─┘└─┘
+Stones for Emacs!\n")
+        (dolist (section estones-lobby-functions)
+          (let ((lbl (car section))
+                (func (cdr section)))
+            (insert (concat "\n" lbl "\n"))
+            (funcall func))))
+      (goto-char (point-min))
+      (forward-button 1))
+    (pop-to-buffer buf '(display-buffer-same-window . ()))))

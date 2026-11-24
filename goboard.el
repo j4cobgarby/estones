@@ -188,13 +188,14 @@ Returns the new move, and also modifies the BOARD's history mainline."
 
 (defun estones-new-local-game (size komi &optional black-name white-name title)
   "Creates a new game with given board SIZE and KOMI."
-  (estones-game--make
-   :root (estones-new-gametree size komi)
-   :black-name (or black-name "Black")
-   :white-name (or white-name "White")
-   :title (or title "Unnamed Local Game")
-   :black-is-local t
-   :white-is-local t))
+  (interactive "nBoard size: \nnKomi: \nsBlack: \nsWhite: \nsTitle: ")
+  (estones-game-buffer (estones-game--make
+    :root (estones-new-gametree size komi)
+    :black-name (or black-name "Black")
+    :white-name (or white-name "White")
+    :title (or title "Unnamed Local Game")
+    :black-is-local t
+    :white-is-local t)))
 
 (defun estones-play-after-node (node colour idx)
   "Play a new move in a game tree after a given NODE, also setting it as the main continuation.
