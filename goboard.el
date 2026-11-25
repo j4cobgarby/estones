@@ -71,8 +71,11 @@ as well as the MOVE that led to it."
   board)
 
 (defun estones-idx (board x y)
-  "Convert x-y coords to vector index"
-  (+ x (* y (estones-board-size board))))
+  "Convert x-y coords to vector index. BOARD is either an `estones-board' or a number for the board size."
+  (let ((board-size (if (numberp board)
+                        board
+                      (estones-board-size board))))
+      (+ x (* y board-size))))
 
 (defun estones-xy (board idx)
   "Convert vector index to x-y coords"
@@ -80,11 +83,13 @@ as well as the MOVE that led to it."
     (cons (% idx size) (/ idx size))))
 
 (defun estones-coords (board idx)
-  (pcase-let* ((`(,x . ,y) (estones-xy board idx))
-               (column (aref estones-columns x))
-               (row (number-to-string
-                     (- (estones-board-size board) y))))
-    (format "%c%s" column row)))
+  (if idx
+      (pcase-let* ((`(,x . ,y) (estones-xy board idx))
+                   (column (aref estones-columns x))
+                   (row (number-to-string
+                         (- (estones-board-size board) y))))
+        (format "%c%s" column row))
+    "(pass)"))
 
 (defun estones-stone-at (board x y)
   "Return stone at coords X, Y"
@@ -203,10 +208,12 @@ If COLOUR is nil, play stones taking in turns between colours.
 If a move at IDX already has been played after NODE, it's not added again, and the exist continuation is returned.
 Otherwise, the new node is returned."
   
-  (let ((existing (any (lambda (move)
-                         (= (estones-move-idx move) idx)) (estones-node-children node))))
+  (let ((existing (cl-find-if (lambda (child)
+                                (let ((m (estones-node-move child)))
+                                  (and m (= (estones-move-idx m) idx))))
+                              (estones-node-children node))))
     (if existing
-        (car existing)
+        existing
       (unless colour
         (setq colour (estones-next-move-colour (estones-node-move node))))
       (let* ((board-cpy (estones-board-deep-copy (estones-node-board-snapshot node)))

@@ -1,5 +1,6 @@
 ;; -*- lexical-binding: t; -*-
 
+(require 'cl-lib)
 (require 'estones-functionality)
 
 (defgroup estones nil
@@ -87,6 +88,7 @@
                           'grid-idx (estones-idx board x y))
               (propertize (if right " " "─")
                           'face 'estones-board-face))))
+
 (defun estones-render (game active-node)
   "Mainly called by `estones-render-current' to draw a Go board state."
   (let* ((board (estones-node-board-snapshot active-node))
@@ -119,9 +121,14 @@
                'face 'estones-board-face)))
     (insert "\n")
     ;; Game status
-    (when last-move
-      (insert (format "Last move was at %s\n"
-                      (estones-coords board (estones-move-idx last-move)))))
+    (let ((siblings (estones--siblings active-node)))
+      (insert "Siblings: ")
+      (dolist (sib siblings)
+        (if (eq sib active-node) (insert "->"))
+        (insert (estones-coords board
+                                (estones-move-idx (estones-node-move sib))))
+        (insert "  "))
+      (insert "\n"))
     (insert (format "Move %d -- "
                     (estones-node-move-number active-node)))
     (insert (format "%s to play \n" (if last-move
@@ -130,6 +137,14 @@
     (let ((prisoners (estones-board-prisoners board)))
       (insert (format "Prisoner points: (black) %d | (white) %d\n"
                       (car prisoners) (cdr prisoners))))
+    (when-let* ((children (estones-node-children active-node))
+                (mainline (estones-node-main-move active-node)))
+      (insert "\nContinuations: ")
+      (dolist (child children)
+        (if (eq child mainline) (insert "->"))
+        (insert (estones-coords board
+                                (estones-move-idx (estones-node-move child))))
+        (insert "  ")))
     (goto-char save-point)))
 
 (defun estones-render-current ()
@@ -141,8 +156,10 @@
   :parent special-mode-map
   "RET" #'estones-make-move-at-point
   "SPC" #'estones-make-move-at-point
-  "C-n" #'estones-seek-forward
-  "C-p" #'estones-seek-back
+  "M-n" #'estones-seek-forward
+  "M-p" #'estones-seek-back
+  "M-f" #'estones-seek-sibling
+  "M-b" #'estones-seek-sibling-back
   "<mouse-1>" #'estones-make-move-at-mouse)
 
 (define-derived-mode estones-mode special-mode "Estones"
@@ -214,6 +231,32 @@ It should then do something which amounts to playing that move after `estones--a
   (estones-seek-to
    (or (estones-node-main-move estones--active-node)
        estones--active-node)))
+
+(defun estones--siblings (node)
+  "Return all of NODE's siblings, including itself"
+  (let ((parent (estones-node-parent node)))
+    (if parent
+        (estones-node-children parent)
+      (list node))))
+
+(defun estones--sibling (node offset)
+  "Return a sibling of NODE that is the OFFSET'th next in the list."
+  (let* ((children (estones--siblings node))
+         (idx (cl-position node children))
+         (num-children (length children)))
+    (nth (mod (+ idx offset) num-children) children)))
+
+(defun estones-seek-sibling (offset)
+  (interactive "p")
+  (estones-seek-to
+   (estones--sibling (estones--require-active-node)
+                     offset)))
+
+(defun estones-seek-sibling-back (offset)
+  (interactive "p")
+  (estones-seek-to
+   (estones--sibling (estones--require-active-node)
+                     (- offset))))
 
 ;;; Lobby/Entering games
 
